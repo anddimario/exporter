@@ -1,0 +1,21 @@
+{
+  "name": "exporter",
+  "version": "0.0.1",
+  "description": "Export from SQL to json, csv or parquet",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Andrea Di Mario",
+  "license": "MIT",
+  "dependencies": {
+    "aws-sdk": "^2.229.1",
+    "dotenv": "^5.0.1",
+    "knex": "^0.14.6",
+    "mysql": "^2.15.0",
+    "parquetjs": "^0.7.0"
+  },
+  "devDependencies": {
+    "faker": "^4.1.0"
+  }
+}

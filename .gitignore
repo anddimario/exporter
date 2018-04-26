@@ -1,0 +1,5 @@
+aws-keys.json
+.env
+info
+node_modules/
+output/
