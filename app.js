@@ -27,6 +27,7 @@ const mysql = require('knex')({
 const appendFS = promisify(fs.appendFile);
 const statAsync = promisify(fs.stat);
 const removeAsync = promisify(fs.unlink);
+const fileListAsync = promisify(fs.readdir);
 
 let s3;
 if (process.env.S3_STORE) {
@@ -55,28 +56,6 @@ async function main() {
         const fileSize = fileStat.size / 1000000.0;
 
         if (fileSize >= +process.env.MAX_FILE_SIZE) {
-          // if enabled s3 store, send and remove on local disk
-          if (process.env.S3_STORE) {
-            const body = fs.createReadStream(datasetFile);
-
-            await new Promise((resolve, reject) => {
-              // http://docs.amazonaws.cn/en_us/AWSJavaScriptSDK/guide/node-examples.html#Amazon_S3__Uploading_an_arbitrarily_sized_stream__upload_
-              s3.upload({
-                Bucket: process.env.S3_BUCKET,
-                Key: `${process.env.DATASET_NAME}${referenceDate}.${process.env.EXPORT_TYPE}`,
-                Body: body
-              })
-                //.on('httpUploadProgress', (evt) => { console.log(evt); })
-                .send(function (err, data) {
-                  //  console.log(err, data);            
-                  if (err) {
-                    reject(err);
-                  }
-                  resolve(data);
-                });
-            });
-            await removeAsync(datasetFile);
-          }
           referenceDate = Date.now();
         }
 
@@ -92,31 +71,63 @@ async function main() {
       }
 
       const rows = await mysql.raw(query);
-      // if parquet, open file
+      cursor = false;
+      // scan paginated results and store      
       if (process.env.EXPORT_TYPE === 'parquet') {
         parquetWriter = await parquet.ParquetWriter.openFile(parquetSchema, datasetFile);
-      }
-      cursor = false;
-      // scan paginated results and store
-      for (let row of rows[0]) {
-        cursor = row[process.env.QUERY_ORDER_KEY];
-        switch (process.env.EXPORT_TYPE) {
-          case 'json':
-            await appendFS(datasetFile, `${JSON.stringify(row)}\r\n`, 'utf8');
-            break;
-          case 'csv':
-            await appendFS(datasetFile, `${Object.values(row).join(',')}\r\n`, 'utf8');
-            break;
-          case 'parquet':
-            await parquetWriter.appendRow(row);
-            break;
-          default:
-            throw new Error('Wrong format');
+        for (let row of rows[0]) {
+          await parquetWriter.appendRow(row);
+        }
+        await parquetWriter.close();
+      } else {
+
+        for (let row of rows[0]) {
+          cursor = row[process.env.QUERY_ORDER_KEY];
+          switch (process.env.EXPORT_TYPE) {
+            case 'json':
+              await appendFS(datasetFile, `${JSON.stringify(row)}\r\n`, 'utf8');
+              break;
+            case 'csv':
+              await appendFS(datasetFile, `${Object.values(row).join(',')}\r\n`, 'utf8');
+              break;
+            default:
+              throw new Error('Wrong format');
+          }
         }
       }
+
       // stop if there are less results
       if (!cursor) {
         scan = false;
+      }
+    }
+
+    // if enabled s3 store, send and remove on local disk
+    if (process.env.S3_STORE) {
+      console.log("ciao")
+      // list acutal files
+      const files = await fileListAsync('./output/');
+      // if size is reached, gzip, send and rotate file
+      for (const file of files) {
+        const body = fs.createReadStream(`./output/${file}`);
+
+        await new Promise((resolve, reject) => {
+          // http://docs.amazonaws.cn/en_us/AWSJavaScriptSDK/guide/node-examples.html#Amazon_S3__Uploading_an_arbitrarily_sized_stream__upload_
+          s3.upload({
+            Bucket: process.env.S3_BUCKET,
+            Key: file,
+            Body: body
+          })
+            //.on('httpUploadProgress', (evt) => { console.log(evt); })
+            .send(function (err, data) {
+              //  console.log(err, data);            
+              if (err) {
+                reject(err);
+              }
+              resolve(data);
+            });
+        });
+        await removeAsync(`./output/${file}`);
       }
     }
     process.exit();

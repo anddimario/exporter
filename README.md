@@ -35,6 +35,7 @@ Parquet schema should save on root as `parquetSchema.js` see `example/`
 ```
 QUERY_ORDER_KEY=id
 QUERY=SELECT * FROM mytest
+QUERY_LIMIT=50
 ```
 - node app.js
 
