@@ -1,5 +1,11 @@
-**STATUS: alpha** 
+Export from SQL to json, csv or parquet
 
+### Features
+- support json, csv and parquet file
+- optional write on s3
+- pre and post hook
+
+### Setup
 - create aws credentials and store them as json in root directory as aws-keys.json (optional)
 - create a .env file
 - npm install
@@ -39,8 +45,16 @@ QUERY_LIMIT=50
 ```
 - node app.js
 
+### Use hooks
+Hooks are useful to run functions pre and post process, for example to check if process could start on particular situations, or if it must delete data after export, or send a notifications. Hooks could be specified on .env as:
+```
+HOOKS_PRE=./example/hooks/check
+HOOKS_POST=./example/hooks/touch,./example/hooks/clean
+```
+In .env are used the path where functions are.
+
 ### Todo
-- see cursor
+- check cursor
 - better docs
 - more tests
-- improvements (speed and features)
+- improvements (code, speed and features)

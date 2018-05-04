@@ -42,8 +42,29 @@ if (process.env.EXPORT_TYPE === 'parquet') {
   parquetSchema = new parquet.ParquetSchema(require('./parquetSchema'));
 }
 
+// Hooks
+const hooksPre = [];
+const hooksPost = [];
+if (process.env.HOOKS_PRE) {
+  const hooks = process.env.HOOKS_PRE.split(',');
+  for (let hook of hooks) {
+    // require function and push on function array
+    hooksPre.push(require(hook));
+  }
+}
+if (process.env.HOOKS_POST) {
+  const hooks = process.env.HOOKS_POST.split(',');
+  for (let hook of hooks) {
+    // require function and push on function array
+    hooksPost.push(require(hook));
+  }
+}
+
 async function main() {
   try {
+    for (let hook of hooksPre) {
+      hook();
+    }
     let referenceDate = Date.now();
     let cursor;
     let scan = true;
@@ -104,7 +125,6 @@ async function main() {
 
     // if enabled s3 store, send and remove on local disk
     if (process.env.S3_STORE) {
-      console.log("ciao")
       // list acutal files
       const files = await fileListAsync('./output/');
       // if size is reached, gzip, send and rotate file
@@ -129,6 +149,9 @@ async function main() {
         });
         await removeAsync(`./output/${file}`);
       }
+    }
+    for (let hook of hooksPost) {
+      hook();
     }
     process.exit();
   } catch (e) {
