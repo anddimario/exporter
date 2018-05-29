@@ -3,3 +3,4 @@ aws-keys.json
 info
 node_modules/
 output/
+queries.js

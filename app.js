@@ -6,6 +6,7 @@ const AWS = require('aws-sdk');
 const parquet = require('parquetjs');
 const promisify = require('util').promisify;
 const fs = require('fs');
+const queries = require('./queries');
 const mysql = require('knex')({
   client: 'mysql',
   connection: {
@@ -42,34 +43,53 @@ if (process.env.EXPORT_TYPE === 'parquet') {
   parquetSchema = new parquet.ParquetSchema(require('./parquetSchema'));
 }
 
-// Hooks
-const hooksPre = [];
-const hooksPost = [];
-if (process.env.HOOKS_PRE) {
-  const hooks = process.env.HOOKS_PRE.split(',');
-  for (let hook of hooks) {
-    // require function and push on function array
-    hooksPre.push(require(hook));
-  }
-}
-if (process.env.HOOKS_POST) {
-  const hooks = process.env.HOOKS_POST.split(',');
-  for (let hook of hooks) {
-    // require function and push on function array
-    hooksPost.push(require(hook));
+// Store file on s3
+async function storeOnS3(file) {
+  // list acutal files
+  const files = await fileListAsync('./output/');
+  // if size is reached, gzip, send and rotate file
+  for (const file of files) {
+    const body = fs.createReadStream(`./output/${file}`);
+
+    await new Promise((resolve, reject) => {
+      // http://docs.amazonaws.cn/en_us/AWSJavaScriptSDK/guide/node-examples.html#Amazon_S3__Uploading_an_arbitrarily_sized_stream__upload_
+      s3.upload({
+        Bucket: process.env.S3_BUCKET,
+        Key: file,
+        Body: body
+      })
+        //.on('httpUploadProgress', (evt) => { console.log(evt); })
+        .send(function (err, data) {
+          //  console.log(err, data);            
+          if (err) {
+            reject(err);
+          }
+          resolve(data);
+        });
+    });
+    await removeAsync(`./output/${file}`);
   }
 }
 
-async function main() {
+function runHooks(hooksList) {
+  const hooks = hooksList.split(',');
+  for (let hook of hooks) {
+    // require function and push on function array
+    require(hook)();
+  }
+}
+
+async function execute(info) {
+  console.log(info)
   try {
-    for (let hook of hooksPre) {
-      hook();
+    if (info.preHooks) {
+      runHooks(info.preHooks);
     }
     let referenceDate = Date.now();
     let cursor;
     let scan = true;
     while (scan) {
-      const datasetFile = `./output/${process.env.DATASET_NAME}${referenceDate}.${process.env.EXPORT_TYPE}`;
+      const datasetFile = `./output/${info.datasetName}${referenceDate}.${process.env.EXPORT_TYPE}`;
       const exists = fs.existsSync(datasetFile);
       if (exists) {
         // calculate if need to split to new file
@@ -81,14 +101,21 @@ async function main() {
         }
 
       }
-      let query = process.env.QUERY;
+      let query = info.query;
 
-      if (cursor) {
-        query += ` WHERE ${process.env.QUERY_ORDER_KEY} > ${cursor}`;
+      if (info.filters) {
+        query += ` WHERE ${info.filters}`;
       }
-      query += ` ORDER BY ${process.env.QUERY_ORDER_KEY}`;
-      if (process.env.QUERY_LIMIT) {
-        query += ` LIMIT ${process.env.QUERY_LIMIT}`;
+      if (cursor) {
+        if (info.filters) {
+          query += ` AND ${info.orderKey} > ${cursor}`;
+        } else {
+          query += ` WHERE ${info.orderKey} > ${cursor}`;
+        }
+      }
+      query += ` ORDER BY ${info.orderKey}`;
+      if (info.limit) {
+        query += ` LIMIT ${info.limit}`;
       }
 
       const rows = await mysql.raw(query);
@@ -103,7 +130,7 @@ async function main() {
       } else {
 
         for (let row of rows[0]) {
-          cursor = row[process.env.QUERY_ORDER_KEY];
+          cursor = row[info.orderKey];
           switch (process.env.EXPORT_TYPE) {
             case 'json':
               await appendFS(datasetFile, `${JSON.stringify(row)}\r\n`, 'utf8');
@@ -124,40 +151,21 @@ async function main() {
     }
 
     // if enabled s3 store, send and remove on local disk
-    if (process.env.S3_STORE) {
-      // list acutal files
-      const files = await fileListAsync('./output/');
-      // if size is reached, gzip, send and rotate file
-      for (const file of files) {
-        const body = fs.createReadStream(`./output/${file}`);
-
-        await new Promise((resolve, reject) => {
-          // http://docs.amazonaws.cn/en_us/AWSJavaScriptSDK/guide/node-examples.html#Amazon_S3__Uploading_an_arbitrarily_sized_stream__upload_
-          s3.upload({
-            Bucket: process.env.S3_BUCKET,
-            Key: file,
-            Body: body
-          })
-            //.on('httpUploadProgress', (evt) => { console.log(evt); })
-            .send(function (err, data) {
-              //  console.log(err, data);            
-              if (err) {
-                reject(err);
-              }
-              resolve(data);
-            });
-        });
-        await removeAsync(`./output/${file}`);
-      }
+    if (info.s3Store) {
+      await storeOnS3(file);
     }
-    for (let hook of hooksPost) {
-      hook();
+    if (info.postHooks) {
+      runHooks(info.postHooks);
     }
     process.exit();
   } catch (e) {
     console.log(e)
     process.exit(1);
   }
+}
+
+function main() {
+  execute(queries[process.argv[2]]);
 }
 
 main();
