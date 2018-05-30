@@ -21,7 +21,7 @@ const mysql = require('knex')({
 
 async function main() {
   try {
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < process.argv[2]; i++) {
       const record = {
         name: faker.name.findName(),
         email: faker.internet.email(),

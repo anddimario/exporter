@@ -29,7 +29,7 @@ Parquet schema should save on root as `parquetSchema.js` see `example/`
 
 ### Run example
 - create database and table: `create table mytest (id int NOT NULL AUTO_INCREMENT, name varchar(100), email varchar(100), text text, primary key (id));`
-- node example/populate
+- populate table (argument is row number): `node example/populate 1000`
 - in `queries.js` use:
 ```
 module.exports = {
@@ -58,3 +58,11 @@ Then, for each query that need the store, add in query definition object: `s3Sto
 ### Filters
 For add filters in query where, for example, add in query definition:
 `filters: 'age > 10'`
+
+### Timeout
+Timeouts needs a table where store cursors and eventually informations, you must create it with:
+```
+CREATE TABLE exporter_timeouts (query varchar(100) not null, last_cursor varchar(100), info text, primary key (query));
+```
+Set a timeout (in seconds) for process in query definition with: `timeout: 120`    
+You can recovery an eventually interruped process, set in query definition: `continue: true`, this check if there's a cursor on table for the query and start from it.

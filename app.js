@@ -1,5 +1,7 @@
 'use strict';
 
+const startDate = Date.now();
+
 require('dotenv').config();
 
 const AWS = require('aws-sdk');
@@ -80,7 +82,6 @@ function runHooks(hooksList) {
 }
 
 async function execute(info) {
-  console.log(info)
   try {
     if (info.preHooks) {
       runHooks(info.preHooks);
@@ -105,6 +106,15 @@ async function execute(info) {
 
       if (info.filters) {
         query += ` WHERE ${info.filters}`;
+      }
+      // Check if continue is set and if there's a cursor on db
+      if (info.continue) {
+        const checkCursor = await mysql('exporter_timeouts').where('query', process.argv[2]).select('last_cursor');
+        if (checkCursor[0] && checkCursor[0].last_cursor) {
+          cursor = checkCursor[0].last_cursor;
+          // Delete old cursor
+          await mysql('exporter_timeouts').where('query', process.argv[2]).del();
+        }
       }
       if (cursor) {
         if (info.filters) {
@@ -147,6 +157,14 @@ async function execute(info) {
       // stop if there are less results
       if (!cursor) {
         scan = false;
+      }
+      // Check timeout and stop the loop
+      const processTime = (Date.now()- startDate)/1000;
+      if (processTime > info.timeout) {
+        // store cursor
+        await mysql.raw(`INSERT INTO exporter_timeouts (query, last_cursor) VALUES ('${process.argv[2]}', '${cursor}') ON DUPLICATE KEY UPDATE last_cursor = '${cursor}'`);
+        // stop loop
+        break;
       }
     }
 
