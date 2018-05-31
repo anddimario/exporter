@@ -76,8 +76,16 @@ async function storeOnS3(file) {
 function runHooks(hooksList) {
   const hooks = hooksList.split(',');
   for (let hook of hooks) {
-    // require function and push on function array
     require(hook)();
+  }
+}
+
+function runManipulation(info, row) {
+  if (info.manipulations) {
+    const manipulations = info.manipulations.split(',');
+    for (let manipulation of manipulations) {
+      require(manipulation)(row);
+    }
   }
 }
 
@@ -135,6 +143,7 @@ async function execute(info) {
         parquetWriter = await parquet.ParquetWriter.openFile(parquetSchema, datasetFile);
         for (let row of rows[0]) {
           await parquetWriter.appendRow(row);
+          runManipulation(info, row);
         }
         await parquetWriter.close();
       } else {
@@ -145,8 +154,10 @@ async function execute(info) {
             case 'json':
               await appendFS(datasetFile, `${JSON.stringify(row)}\r\n`, 'utf8');
               break;
+              runManipulation(info, row);
             case 'csv':
               await appendFS(datasetFile, `${Object.values(row).join(',')}\r\n`, 'utf8');
+              runManipulation(info, row);
               break;
             default:
               throw new Error('Wrong format');
@@ -159,7 +170,7 @@ async function execute(info) {
         scan = false;
       }
       // Check timeout and stop the loop
-      const processTime = (Date.now()- startDate)/1000;
+      const processTime = (Date.now() - startDate) / 1000;
       if (processTime > info.timeout) {
         // store cursor
         await mysql.raw(`INSERT INTO exporter_timeouts (query, last_cursor) VALUES ('${process.argv[2]}', '${cursor}') ON DUPLICATE KEY UPDATE last_cursor = '${cursor}'`);

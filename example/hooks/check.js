@@ -1,5 +1,6 @@
 // get example counts
 'use strict';
+
 require('dotenv').config();
 
 const mysql = require('knex')({

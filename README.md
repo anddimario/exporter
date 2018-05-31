@@ -66,3 +66,6 @@ CREATE TABLE exporter_timeouts (query varchar(100) not null, last_cursor varchar
 ```
 Set a timeout (in seconds) for process in query definition with: `timeout: 120`    
 You can recovery an eventually interruped process, set in query definition: `continue: true`, this check if there's a cursor on table for the query and start from it.
+
+### Manipulations
+Manipulations are functions that receive row data after insertions in files, and they could be used for counts, aggregations or other manipulations on data, like hooks, you can create a file for code and define manipulation for query in `queries.js` with: `manipulations: './example/manipulations/count'`
